@@ -4,6 +4,7 @@ from .app.check import EmailCheckEndpoint
 
 from .app.email import SignInAuthEndpoint, SignUpAuthEndpoint
 from .app.github import GitHubCallbackEndpoint, GitHubOauthInitiateEndpoint
+from .app.mog import MogCallbackEndpoint, MogOauthInitiateEndpoint
 from .app.gitlab import GitLabCallbackEndpoint, GitLabOauthInitiateEndpoint
 from .app.google import GoogleCallbackEndpoint, GoogleOauthInitiateEndpoint
 from .app.magic import MagicGenerateEndpoint, MagicSignInEndpoint, MagicSignUpEndpoint

@@ -12,6 +12,8 @@ from .views import (
     GitLabOauthInitiateEndpoint,
     GitHubCallbackEndpoint,
     GitHubOauthInitiateEndpoint,
+    MogCallbackEndpoint,
+    MogOauthInitiateEndpoint,
     GoogleCallbackEndpoint,
     GoogleOauthInitiateEndpoint,
     MagicGenerateEndpoint,
@@ -84,6 +86,10 @@ urlpatterns = [
     ## Github Oauth
     path("github/", GitHubOauthInitiateEndpoint.as_view(), name="github-initiate"),
     path("github/callback/", GitHubCallbackEndpoint.as_view(), name="github-callback"),
+    ## MOG OIDC (Mog-Deadlock fork — sign in with Steam-canonical identity
+    ## via the OpenIddict bridge in mog-platform).
+    path("mog/", MogOauthInitiateEndpoint.as_view(), name="mog-initiate"),
+    path("mog/callback/", MogCallbackEndpoint.as_view(), name="mog-callback"),
     path(
         "spaces/github/",
         GitHubOauthInitiateSpaceEndpoint.as_view(),

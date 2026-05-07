@@ -77,6 +77,45 @@ class Command(BaseCommand):
                 "category": "GITHUB",
                 "is_encrypted": False,
             },
+            # MOG OIDC (Mog-Deadlock fork — sign in via the
+            # OpenIddict bridge in mog-platform).
+            {
+                "key": "MOG_CLIENT_ID",
+                "value": os.environ.get("MOG_CLIENT_ID"),
+                "category": "MOG",
+                "is_encrypted": False,
+            },
+            {
+                "key": "MOG_CLIENT_SECRET",
+                "value": os.environ.get("MOG_CLIENT_SECRET"),
+                "category": "MOG",
+                "is_encrypted": True,
+            },
+            {
+                "key": "MOG_AUTHORIZE_URL",
+                "value": os.environ.get(
+                    "MOG_AUTHORIZE_URL",
+                    "https://mogdl.com/connect/authorize",
+                ),
+                "category": "MOG",
+                "is_encrypted": False,
+            },
+            {
+                "key": "MOG_TOKEN_URL",
+                "value": os.environ.get(
+                    "MOG_TOKEN_URL", "https://mogdl.com/connect/token"
+                ),
+                "category": "MOG",
+                "is_encrypted": False,
+            },
+            {
+                "key": "MOG_USERINFO_URL",
+                "value": os.environ.get(
+                    "MOG_USERINFO_URL", "https://mogdl.com/connect/userinfo"
+                ),
+                "category": "MOG",
+                "is_encrypted": False,
+            },
             {
                 "key": "GITLAB_HOST",
                 "value": os.environ.get("GITLAB_HOST"),
@@ -205,7 +244,7 @@ class Command(BaseCommand):
                     self.style.WARNING(f"{obj.key} configuration already exists")
                 )
 
-        keys = ["IS_GOOGLE_ENABLED", "IS_GITHUB_ENABLED", "IS_GITLAB_ENABLED"]
+        keys = ["IS_GOOGLE_ENABLED", "IS_GITHUB_ENABLED", "IS_GITLAB_ENABLED", "IS_MOG_ENABLED"]
         if not InstanceConfiguration.objects.filter(key__in=keys).exists():
             for key in keys:
                 if key == "IS_GOOGLE_ENABLED":
@@ -297,6 +336,36 @@ class Command(BaseCommand):
                         value = "0"
                     InstanceConfiguration.objects.create(
                         key="IS_GITLAB_ENABLED",
+                        value=value,
+                        category="AUTHENTICATION",
+                        is_encrypted=False,
+                    )
+                    self.stdout.write(
+                        self.style.SUCCESS(
+                            f"{key} loaded with value from environment variable."
+                        )
+                    )
+                if key == "IS_MOG_ENABLED":
+                    MOG_CLIENT_ID, MOG_CLIENT_SECRET = get_configuration_value(
+                        [
+                            {
+                                "key": "MOG_CLIENT_ID",
+                                "default": os.environ.get("MOG_CLIENT_ID", ""),
+                            },
+                            {
+                                "key": "MOG_CLIENT_SECRET",
+                                "default": os.environ.get(
+                                    "MOG_CLIENT_SECRET", ""
+                                ),
+                            },
+                        ]
+                    )
+                    if bool(MOG_CLIENT_ID) and bool(MOG_CLIENT_SECRET):
+                        value = "1"
+                    else:
+                        value = "0"
+                    InstanceConfiguration.objects.create(
+                        key="IS_MOG_ENABLED",
                         value=value,
                         category="AUTHENTICATION",
                         is_encrypted=False,
