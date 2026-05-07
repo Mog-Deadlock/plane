@@ -31,12 +31,12 @@ def get_default_props():
             "subscriber": None,
         },
         "display_filters": {
-            "group_by": None,
-            "order_by": "-created_at",
+            "group_by": "state",
+            "order_by": "sort_order",
             "type": None,
             "sub_issue": True,
             "show_empty_groups": True,
-            "layout": "list",
+            "layout": "kanban",
             "calendar_date_range": "",
         },
         "display_properties": {
@@ -74,12 +74,12 @@ def get_default_filters():
 def get_default_display_filters():
     return {
         "display_filters": {
-            "group_by": None,
-            "order_by": "-created_at",
+            "group_by": "state",
+            "order_by": "sort_order",
             "type": None,
             "sub_issue": True,
             "show_empty_groups": True,
-            "layout": "list",
+            "layout": "kanban",
             "calendar_date_range": "",
         }
     }
