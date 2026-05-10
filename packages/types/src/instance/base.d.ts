@@ -40,6 +40,7 @@ export interface IInstanceConfig {
   enable_signup: boolean;
   is_workspace_creation_disabled: boolean;
   is_google_enabled: boolean;
+  is_mog_enabled: boolean;
   is_github_enabled: boolean;
   is_gitlab_enabled: boolean;
   is_magic_login_enabled: boolean;

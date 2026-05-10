@@ -1,9 +1,7 @@
 name: Build Mog-Deadlock images
 
-# Builds the custom Plane images for our fork (currently just the
-# backend, since that's where the MOG OIDC adapter lives) and pushes
-# them to ghcr.io/mog-deadlock so mog-tracker-infra's docker-compose
-# can pull them.
+# Builds the custom Plane images for our fork and pushes them to
+# ghcr.io/mog-deadlock so mog-tracker-infra's docker-compose can pull them.
 #
 # Triggers:
 #   - push to mog-oidc (or any branch starting with `mog-`)
@@ -13,14 +11,10 @@ name: Build Mog-Deadlock images
 # Image naming:
 #   ghcr.io/mog-deadlock/plane-backend:<branch-or-tag>
 #   ghcr.io/mog-deadlock/plane-backend:<short-sha>
-#   ghcr.io/mog-deadlock/plane-backend:mog-v0.27.0  (stable pointer
-#                                                    that mog-tracker-infra
-#                                                    pins against)
-#
-# Frontend, admin, space images stay on upstream's makeplane/* tags
-# — no changes there yet. If we ever need to fork them too (e.g. to
-# add a "Sign in with MOG" button on the login page) drop a parallel
-# build job below following the same pattern.
+#   ghcr.io/mog-deadlock/plane-backend:mog-v0.27.0
+#   ghcr.io/mog-deadlock/plane-frontend:<branch-or-tag>
+#   ghcr.io/mog-deadlock/plane-frontend:<short-sha>
+#   ghcr.io/mog-deadlock/plane-frontend:mog-v0.27.0
 
 on:
   push:
@@ -38,7 +32,6 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
   REGISTRY: ghcr.io
-  IMAGE_NAME: mog-deadlock/plane-backend
 
 jobs:
   build-backend:
@@ -66,10 +59,8 @@ jobs:
           REF_TAG="${{ github.ref_name }}"
           INPUT_TAG="${{ inputs.tag }}"
           SHORT_SHA="$(echo ${{ github.sha }} | cut -c1-12)"
-          IMAGE_BASE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          IMAGE_BASE="${{ env.REGISTRY }}/mog-deadlock/plane-backend"
 
-          # On a manual run, use the input tag verbatim; otherwise use
-          # the branch / tag name (sanitized for image-tag syntax).
           PRIMARY_TAG="${INPUT_TAG:-$REF_TAG}"
           PRIMARY_TAG="${PRIMARY_TAG//\//-}"
 
@@ -88,6 +79,60 @@ jobs:
         with:
           context: ./apiserver
           file: ./apiserver/Dockerfile.api
+          push: true
+          tags: |
+            ${{ steps.tags.outputs.primary }}
+            ${{ steps.tags.outputs.sha }}
+            ${{ steps.tags.outputs.stable }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve tags
+        id: tags
+        run: |
+          REF_TAG="${{ github.ref_name }}"
+          INPUT_TAG="${{ inputs.tag }}"
+          SHORT_SHA="$(echo ${{ github.sha }} | cut -c1-12)"
+          IMAGE_BASE="${{ env.REGISTRY }}/mog-deadlock/plane-frontend"
+
+          PRIMARY_TAG="${INPUT_TAG:-$REF_TAG}"
+          PRIMARY_TAG="${PRIMARY_TAG//\//-}"
+
+          {
+            echo "primary=${IMAGE_BASE}:${PRIMARY_TAG}"
+            echo "sha=${IMAGE_BASE}:${SHORT_SHA}"
+            echo "stable=${IMAGE_BASE}:mog-v0.27.0"
+          } >> "$GITHUB_OUTPUT"
+          echo "Will publish:"
+          echo "  ${IMAGE_BASE}:${PRIMARY_TAG}"
+          echo "  ${IMAGE_BASE}:${SHORT_SHA}"
+          echo "  ${IMAGE_BASE}:mog-v0.27.0"
+
+      - name: Build + push plane-frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./web/Dockerfile.web
           push: true
           tags: |
             ${{ steps.tags.outputs.primary }}

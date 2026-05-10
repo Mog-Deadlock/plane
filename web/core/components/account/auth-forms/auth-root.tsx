@@ -3,6 +3,8 @@ import { observer } from "mobx-react";
 import { useSearchParams } from "next/navigation";
 import { useTranslation } from "@plane/i18n";
 import { IEmailCheckData } from "@plane/types";
+// helpers
+import { API_BASE_URL } from "@plane/constants";
 // components
 import {
   AuthHeader,
@@ -104,6 +106,19 @@ export const AuthRoot: FC<TAuthRoot> = observer((props) => {
   }, [error_code, authMode]);
 
   const isSMTPConfigured = config?.is_smtp_configured || false;
+  const shouldUseMogOnly =
+    !!config?.is_mog_enabled &&
+    !config?.is_google_enabled &&
+    !config?.is_github_enabled &&
+    !config?.is_gitlab_enabled &&
+    !config?.is_magic_login_enabled &&
+    !config?.is_email_password_enabled;
+
+  useEffect(() => {
+    if (!shouldUseMogOnly || error_code) return;
+
+    window.location.assign(`${API_BASE_URL}/auth/mog/${nextPath ? `?next_path=${nextPath}` : ``}`);
+  }, [error_code, nextPath, shouldUseMogOnly]);
 
   // submit handler- email verification
   const handleEmailVerification = async (data: IEmailCheckData) => {
@@ -172,7 +187,9 @@ export const AuthRoot: FC<TAuthRoot> = observer((props) => {
         {errorInfo && errorInfo?.type === EErrorAlertType.BANNER_ALERT && (
           <AuthBanner bannerData={errorInfo} handleBannerData={(value) => setErrorInfo(value)} />
         )}
-        {authStep === EAuthSteps.EMAIL && <AuthEmailForm defaultEmail={email} onSubmit={handleEmailVerification} />}
+        {authStep === EAuthSteps.EMAIL && !shouldUseMogOnly && (
+          <AuthEmailForm defaultEmail={email} onSubmit={handleEmailVerification} />
+        )}
         {authStep === EAuthSteps.UNIQUE_CODE && (
           <AuthUniqueCodeForm
             mode={authMode}
