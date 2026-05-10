@@ -149,6 +149,42 @@ class MogOAuthProvider(OauthAdapter):
             }
         )
 
+    def authenticate(self):
+        user = super().authenticate()
+        self.sync_mog_profile(user)
+        return user
+
+    def sync_mog_profile(self, user):
+        mog_user = self.user_data.get("user", {})
+        display_name = mog_user.get("display_name", "")
+        avatar = mog_user.get("avatar", "")
+
+        changed_fields = []
+        if display_name and user.display_name != display_name:
+            user.display_name = display_name
+            changed_fields.append("display_name")
+
+        first_name = mog_user.get("first_name", "")
+        if user.first_name != first_name:
+            user.first_name = first_name
+            changed_fields.append("first_name")
+
+        last_name = mog_user.get("last_name", "")
+        if user.last_name != last_name:
+            user.last_name = last_name
+            changed_fields.append("last_name")
+
+        if avatar and user.avatar != avatar:
+            user.avatar = avatar
+            changed_fields.append("avatar")
+
+        if avatar and user.avatar_asset_id is not None:
+            user.avatar_asset_id = None
+            changed_fields.append("avatar_asset")
+
+        if changed_fields:
+            user.save(update_fields=changed_fields)
+
     def set_user_data(self):
         # OpenIddict's userinfo endpoint returns the OIDC-standard
         # claims plus our custom mog:github extras when the scope was
@@ -173,6 +209,8 @@ class MogOAuthProvider(OauthAdapter):
 
         display_name = (
             user_info_response.get("name")
+            or user_info_response.get("display_name")
+            or user_info_response.get("steam_display_name")
             or user_info_response.get("preferred_username")
             or sub
         )
@@ -187,7 +225,16 @@ class MogOAuthProvider(OauthAdapter):
                 "user": {
                     "provider_id": sub,
                     "email": email,
-                    "avatar": user_info_response.get("picture", ""),
+                    "avatar": (
+                        user_info_response.get("picture")
+                        or user_info_response.get("avatar_url")
+                        or user_info_response.get("steam_avatar_url")
+                        or user_info_response.get("avatarfull")
+                        or user_info_response.get("avatarmedium")
+                        or user_info_response.get("avatar")
+                        or ""
+                    ),
+                    "display_name": display_name,
                     "first_name": first_name,
                     "last_name": last_name,
                     "is_password_autoset": True,
