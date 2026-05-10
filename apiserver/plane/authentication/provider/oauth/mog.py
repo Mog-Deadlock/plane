@@ -18,10 +18,12 @@ import os
 from datetime import datetime
 from urllib.parse import urlencode
 
+from django.http import Http404
 import pytz
 import requests
 
 from plane.authentication.adapter.oauth import OauthAdapter
+from plane.db.models import Workspace, WorkspaceMember
 from plane.license.utils.instance_value import get_configuration_value
 from plane.authentication.adapter.error import (
     AuthenticationException,
@@ -31,6 +33,8 @@ from plane.authentication.adapter.error import (
 
 class MogOAuthProvider(OauthAdapter):
     provider = "mog"
+    allowed_roles = {"superadmin", "admin", "moderator", "developer", "artist", "mapper"}
+    default_workspace_slug = "mog-deadlock"
     # Default scopes — openid + profile + email gives us sub + name +
     # preferred_username; mog:github surfaces the GitHub-org claims
     # that the platform-side OpenIddictClaimsBuilder sets.
@@ -43,6 +47,9 @@ class MogOAuthProvider(OauthAdapter):
             MOG_AUTHORIZE_URL,
             MOG_TOKEN_URL,
             MOG_USERINFO_URL,
+            MOG_TRACKER_ACCESS_URL,
+            MOG_TRACKER_ACCESS_API_KEY,
+            MOG_TRACKER_WORKSPACE_SLUG,
         ) = get_configuration_value(
             [
                 {
@@ -74,6 +81,21 @@ class MogOAuthProvider(OauthAdapter):
                         "https://mogdl.com/connect/userinfo",
                     ),
                 },
+                {
+                    "key": "MOG_TRACKER_ACCESS_URL",
+                    "default": os.environ.get("MOG_TRACKER_ACCESS_URL", ""),
+                },
+                {
+                    "key": "MOG_TRACKER_ACCESS_API_KEY",
+                    "default": os.environ.get("MOG_TRACKER_ACCESS_API_KEY", ""),
+                },
+                {
+                    "key": "MOG_TRACKER_WORKSPACE_SLUG",
+                    "default": os.environ.get(
+                        "MOG_TRACKER_WORKSPACE_SLUG",
+                        self.default_workspace_slug,
+                    ),
+                },
             ]
         )
 
@@ -87,6 +109,11 @@ class MogOAuthProvider(OauthAdapter):
         client_secret = MOG_CLIENT_SECRET
         self.token_url = MOG_TOKEN_URL
         self.userinfo_url = MOG_USERINFO_URL
+        self.tracker_access_url = MOG_TRACKER_ACCESS_URL
+        self.tracker_access_api_key = MOG_TRACKER_ACCESS_API_KEY
+        self.tracker_workspace_slug = (
+            MOG_TRACKER_WORKSPACE_SLUG or self.default_workspace_slug
+        )
 
         redirect_uri = (
             f"""{"https" if request.is_secure() else "http"}"""
@@ -152,6 +179,7 @@ class MogOAuthProvider(OauthAdapter):
     def authenticate(self):
         user = super().authenticate()
         self.sync_mog_profile(user)
+        self.ensure_tracker_workspace_membership(user)
         return user
 
     def sync_mog_profile(self, user):
@@ -185,6 +213,35 @@ class MogOAuthProvider(OauthAdapter):
         if changed_fields:
             user.save(update_fields=changed_fields)
 
+    def ensure_tracker_workspace_membership(self, user):
+        workspace = Workspace.objects.filter(slug=self.tracker_workspace_slug).first()
+        if workspace is None:
+            return
+
+        workspace_member = WorkspaceMember.objects.filter(
+            workspace=workspace,
+            member=user,
+            deleted_at__isnull=True,
+        ).first()
+        if workspace_member is None:
+            WorkspaceMember.objects.create(
+                workspace=workspace,
+                member=user,
+                role=15,
+                is_active=True,
+            )
+            return
+
+        changed_fields = []
+        if workspace_member.role < 15:
+            workspace_member.role = 15
+            changed_fields.append("role")
+        if not workspace_member.is_active:
+            workspace_member.is_active = True
+            changed_fields.append("is_active")
+        if changed_fields:
+            workspace_member.save(update_fields=changed_fields)
+
     def set_user_data(self):
         # OpenIddict's userinfo endpoint returns the OIDC-standard
         # claims plus our custom mog:github extras when the scope was
@@ -214,6 +271,9 @@ class MogOAuthProvider(OauthAdapter):
             or user_info_response.get("preferred_username")
             or sub
         )
+        roles = self.get_tracker_roles(sub, user_info_response)
+        if not self.has_tracker_access(roles):
+            raise Http404()
 
         # Best-effort first/last split for Plane's profile shape.
         first_name = display_name.split(" ", 1)[0] if display_name else ""
@@ -237,7 +297,60 @@ class MogOAuthProvider(OauthAdapter):
                     "display_name": display_name,
                     "first_name": first_name,
                     "last_name": last_name,
+                    "mog_roles": roles,
                     "is_password_autoset": True,
                 },
+            }
+        )
+
+    def get_tracker_roles(self, player_id, user_info_response):
+        roles = self.normalize_roles(
+            user_info_response.get("mog_roles")
+            or user_info_response.get("roles")
+            or user_info_response.get("role")
+            or []
+        )
+        if roles:
+            return roles
+
+        return self.fetch_tracker_roles(player_id)
+
+    def fetch_tracker_roles(self, player_id):
+        if not self.tracker_access_url or not self.tracker_access_api_key:
+            return []
+
+        url = self.tracker_access_url.rstrip("/") + f"/{player_id}"
+        try:
+            response = requests.get(
+                url,
+                headers={"X-MOG-Tracker-Key": self.tracker_access_api_key},
+                timeout=5,
+            )
+            if response.status_code == 404:
+                return []
+            response.raise_for_status()
+            data = response.json()
+        except (requests.RequestException, ValueError):
+            return []
+
+        return self.normalize_roles(data.get("roles") or [])
+
+    def has_tracker_access(self, roles):
+        return bool(set(roles) & self.allowed_roles)
+
+    @staticmethod
+    def normalize_roles(value):
+        if isinstance(value, str):
+            raw_roles = [role.strip() for role in value.split(",")]
+        elif isinstance(value, list):
+            raw_roles = value
+        else:
+            raw_roles = []
+
+        return sorted(
+            {
+                str(role).strip().lower()
+                for role in raw_roles
+                if str(role).strip()
             }
         )
